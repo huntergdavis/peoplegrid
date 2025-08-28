@@ -123,12 +123,15 @@
       <div class="group" aria-label="Modes">
         <button id="btnSelect" class="primary" title="Select/Move (V)">Select/Move</button>
         <button id="btnPerson" title="Add Person (P)">+ Person</button>
+        <button id="btnText" title="Add Text (T)">T Text</button>
         <button id="btnBox" title="Draw Box (B)">▧ Box</button>
       </div>
 
       <div class="group" aria-label="Edit">
-        <label class="btnlike" for="labelInput" title="Rename selected person (L)">Label</label>
-        <input id="labelInput" class="input" placeholder="Set label…" style="width:180px" />
+        <label class="btnlike" for="labelInput" title="Rename selected (L)">Label/Text</label>
+        <input id="labelInput" class="input" placeholder="Set label or text…" style="width:220px" />
+        <label class="btnlike" for="colorPicker" title="Change color of selected">Color</label>
+        <input id="colorPicker" type="color" value="#6aa3ff" title="Color" style="width:40px;height:34px;padding:0;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:transparent;cursor:pointer" />
         <button id="btnDelete" title="Delete selected (Del)" style="color:#ffbdbd;border-color:rgba(255,122,122,0.45)">Delete</button>
         <button id="btnClear" title="Clear board">Clear</button>
       </div>
@@ -169,6 +172,7 @@
         </defs>
         <rect id="bg" x="0" y="0" width="100%" height="100%" fill="url(#gridPattern)"/>
         <g class="boxes"></g>
+        <g class="texts"></g>
         <g class="people"></g>
       </svg>
 
@@ -186,34 +190,45 @@
     const bg = document.getElementById('bg');
     const gPeople = svg.querySelector('g.people');
     const gBoxes  = svg.querySelector('g.boxes');
+    const gTexts  = svg.querySelector('g.texts');
     const hint = document.getElementById('hint');
 
     const btnSelect = document.getElementById('btnSelect');
     const btnPerson = document.getElementById('btnPerson');
-    const btnBox = document.getElementById('btnBox');
+    const btnText   = document.getElementById('btnText');
+    const btnBox    = document.getElementById('btnBox');
     const btnDelete = document.getElementById('btnDelete');
-    const btnClear = document.getElementById('btnClear');
-    const btnSave = document.getElementById('btnSave');
-    const btnLoad = document.getElementById('btnLoad');
+    const btnClear  = document.getElementById('btnClear');
+    const btnSave   = document.getElementById('btnSave');
+    const btnLoad   = document.getElementById('btnLoad');
     const btnExportJSON = document.getElementById('btnExportJSON');
     const btnImportJSON = document.getElementById('btnImportJSON');
-    const importFile = document.getElementById('importFile');
-    const btnExportPNG = document.getElementById('btnExportPNG');
+    const importFile    = document.getElementById('importFile');
+    const btnExportPNG  = document.getElementById('btnExportPNG');
 
     const toggleGrid = document.getElementById('toggleGrid');
     const toggleSnap = document.getElementById('toggleSnap');
 
     const labelInput = document.getElementById('labelInput');
+    const colorPicker = document.getElementById('colorPicker');
+
+    // --- Defaults ---
+    const DEFAULTS = {
+      personColor: '#6aa3ff',
+      boxColor:    '#5da0ff',
+      textColor:   '#eaf1ff'
+    };
 
     // --- State ---
     const state = {
-      mode: 'select', // 'select' | 'person' | 'box'
+      mode: 'select', // 'select' | 'person' | 'box' | 'text'
       snap: false,
       grid: true,
-      people: [], // {id, x, y, label}
-      boxes: [],  // {id, x, y, w, h}
-      selected: null, // {type:'person'|'box', id}
-      drag: null, // {type, id, start:{x,y}, offset:{x,y}, init:{x,y,w,h}}
+      people: [], // {id, x, y, label, color}
+      boxes: [],  // {id, x, y, w, h, color}
+      texts: [],  // {id, x, y, text, color, size}
+      selected: null, // {type:'person'|'box'|'text', id}
+      drag: null, // {type, id, start:{x,y}, offset:{x,y}}
       nextId: 1
     };
 
@@ -226,14 +241,16 @@
       state.mode = m;
       btnSelect.classList.toggle('active', m==='select');
       btnPerson.classList.toggle('active', m==='person');
+      btnText.classList.toggle('active', m==='text');
       btnBox.classList.toggle('active', m==='box');
       updateHint();
     }
 
     function updateHint(){
-      if(state.mode==='select') hint.textContent = 'Mode: Select/Move. Tip: Click a person or box to drag. Double‑click a person to rename. Del to delete.';
-      if(state.mode==='person') hint.textContent = 'Mode: Add Person. Click anywhere on the board to place a person.';
-      if(state.mode==='box') hint.textContent = 'Mode: Draw Box. Drag on empty space to create a box.';
+      if(state.mode==='select') hint.textContent = 'Mode: Select/Move. Drag to move. Double‑click person/text to rename. Use Delete to remove. (Hold Alt to bypass snap)';
+      if(state.mode==='person') hint.textContent = 'Mode: Add Person. Click to place a person.';
+      if(state.mode==='text')   hint.textContent = 'Mode: Add Text. Click to place a text item.';
+      if(state.mode==='box')    hint.textContent = 'Mode: Draw Box. Drag on empty space to create a box.';
     }
 
     function svgPoint(clientX, clientY){
@@ -252,6 +269,7 @@
 
     function getPerson(id){ return state.people.find(p => p.id===id); }
     function getBox(id){ return state.boxes.find(b => b.id===id); }
+    function getText(id){ return state.texts.find(t => t.id===id); }
 
     function clearSelection(){
       if(state.selected){
@@ -261,6 +279,7 @@
       }
       state.selected = null;
       labelInput.value = '';
+      colorPicker.disabled = true;
     }
 
     function selectEl(type, id){
@@ -269,26 +288,49 @@
       if(!el) return;
       el.classList.add('selected');
       state.selected = {type, id};
+
       if(type==='person'){
         const p = getPerson(id);
-        if(p) labelInput.value = p.label || '';
-      } else {
-        labelInput.value = '';
+        if(p){ labelInput.value = p.label || ''; setPickerColor(p.color || DEFAULTS.personColor); }
+        gPeople.appendChild(el); // bring to front within group
+      } else if(type==='box'){
+        const b = getBox(id);
+        if(b){ labelInput.value=''; setPickerColor(b.color || DEFAULTS.boxColor); }
+        gBoxes.appendChild(el);
+      } else if(type==='text'){
+        const t = getText(id);
+        if(t){ labelInput.value = t.text || ''; setPickerColor(t.color || DEFAULTS.textColor); }
+        gTexts.appendChild(el);
       }
-      // Bring to front
-      if(type==='person') gPeople.appendChild(el);
-      if(type==='box') gBoxes.appendChild(el);
     }
 
-    // ----- Rendering helpers (DOM only, no state mutation) -----
+    function setPickerColor(hex){
+      try { colorPicker.value = toHex(hex); } catch(_){ colorPicker.value = '#6aa3ff'; }
+      colorPicker.disabled = false;
+    }
+
+    // ----- Color helpers -----
+    function clamp(v){ return Math.max(0, Math.min(255, v)); }
+    function hexToRgb(hex){
+      if(!hex) return {r:106,g:163,b:255};
+      let h = (''+hex).replace('#','');
+      if(h.length===3) h = h.split('').map(c=>c+c).join('');
+      const n = parseInt(h,16);
+      return { r: (n>>16)&255, g:(n>>8)&255, b:n&255 };
+    }
+    function rgbToHex(r,g,b){ return '#' + [r,g,b].map(x=>clamp(x).toString(16).padStart(2,'0')).join(''); }
+    function adjust(hex, amt){ const {r,g,b}=hexToRgb(hex); return rgbToHex(r+amt,g+amt,b+amt); }
+    function toHex(hex){ return /^#/.test(hex)? hex : rgbToHex(...Object.values(hexToRgb(hex))); }
+
+    // ----- Rendering helpers (DOM only) -----
     function renderPerson(model){
-      const {id, x, y, label} = model;
+      const {id, x, y, label, color} = model;
       const g = document.createElementNS('http://www.w3.org/2000/svg','g');
       g.setAttribute('class','person draggable');
       g.setAttribute('data-type','person');
       g.setAttribute('data-id', id);
       g.setAttribute('tabindex','0');
-      positionPersonEl(g, x, y);
+      positionTransform(g, x, y);
 
       const head = document.createElementNS('http://www.w3.org/2000/svg','circle');
       head.setAttribute('class','head');
@@ -328,6 +370,8 @@
       text.setAttribute('text-anchor','middle');
       text.textContent = label || 'Person';
 
+      applyPersonColorAttrs({head, torso}, color||DEFAULTS.personColor);
+
       g.appendChild(head);
       g.appendChild(torso);
       g.appendChild(badge);
@@ -337,28 +381,79 @@
       return g;
     }
 
+    function applyPersonColorAttrs(nodes, hex){
+      const stroke1 = adjust(hex, 32);
+      const torsoFill = adjust(hex, -40);
+      const torsoStroke = adjust(hex, -10);
+      nodes.head.style.fill = hex;
+      nodes.head.style.stroke = stroke1;
+      nodes.head.style.strokeWidth = '1.5px';
+      nodes.torso.style.fill = torsoFill;
+      nodes.torso.style.stroke = torsoStroke;
+      nodes.torso.style.strokeWidth = '1.5px';
+    }
+
     function renderBox(model){
-      const {id, x, y, w, h} = model;
+      const {id, x, y, w, h, color} = model;
       const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
       r.setAttribute('class','box draggable');
       r.setAttribute('data-type','box');
       r.setAttribute('data-id', id);
       setRect(r, x, y, w, h);
+      applyBoxColorAttrs(r, color||DEFAULTS.boxColor);
       gBoxes.appendChild(r);
       return r;
+    }
+
+    function applyBoxColorAttrs(el, hex){
+      el.style.stroke = hex;
+      el.style.strokeWidth = '2px';
+      el.style.fill = hex;
+      el.style.fillOpacity = 0.12;
+    }
+
+    function renderText(model){
+      const {id, x, y, text, color, size} = model;
+      const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','textbox draggable');
+      g.setAttribute('data-type','text');
+      g.setAttribute('data-id', id);
+      positionTransform(g, x, y);
+
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('class','tcontent');
+      t.setAttribute('x', 0);
+      t.setAttribute('y', 0);
+      t.setAttribute('text-anchor','start');
+      t.setAttribute('font-size', size || 16);
+      t.setAttribute('font-weight','600');
+      t.textContent = text || 'Text';
+      t.style.fill = color || DEFAULTS.textColor;
+      g.appendChild(t);
+      gTexts.appendChild(g);
+      return g;
     }
 
     // ----- Create helpers (state mutation + render) -----
     function createPerson(x, y, label='Person'){
       const id = newId('p');
-      const model = {id, x, y, label};
+      const model = {id, x, y, label, color: DEFAULTS.personColor};
       state.people.push(model);
       const g = renderPerson(model);
       selectEl('person', id);
       return g;
     }
 
-    function positionPersonEl(g, x, y){ g.setAttribute('transform', `translate(${x},${y})`); }
+    function createText(x, y, text='Text'){
+      const id = newId('t');
+      const model = {id, x, y, text, color: DEFAULTS.textColor, size:16};
+      state.texts.push(model);
+      const g = renderText(model);
+      selectEl('text', id);
+      return g;
+    }
+
+    function positionTransform(g, x, y){ g.setAttribute('transform', `translate(${x},${y})`); }
 
     function updatePersonLabel(id, newLabel){
       const person = getPerson(id);
@@ -369,9 +464,18 @@
       if(text) text.textContent = newLabel;
     }
 
+    function updateTextContent(id, newText){
+      const t = getText(id);
+      if(!t) return;
+      t.text = newText;
+      const g = svg.querySelector(`[data-id="${id}"]`);
+      const el = g && $('text.tcontent', g);
+      if(el) el.textContent = newText;
+    }
+
     function createBox(x, y, w, h){
       const id = newId('b');
-      const model = {id, x, y, w, h};
+      const model = {id, x, y, w, h, color: DEFAULTS.boxColor};
       state.boxes.push(model);
       const r = renderBox(model);
       selectEl('box', id);
@@ -403,23 +507,26 @@
       const el = svg.querySelector(`[data-id="${id}"]`);
       if(el) el.remove();
       if(type==='person') state.people = state.people.filter(p=>p.id!==id);
-      if(type==='box') state.boxes = state.boxes.filter(b=>b.id!==id);
+      if(type==='box')    state.boxes  = state.boxes.filter(b=>b.id!==id);
+      if(type==='text')   state.texts  = state.texts.filter(t=>t.id!==id);
       state.selected = null;
       labelInput.value = '';
+      colorPicker.disabled = true;
       saveToLocal(false); // autosave
       toast('Deleted.');
     }
 
     function clearBoard(){
       if(!confirm('Clear the entire board?')) return;
-      state.people = []; state.boxes = []; state.selected=null; state.nextId=1;
-      gPeople.innerHTML=''; gBoxes.innerHTML='';
+      state.people = []; state.boxes = []; state.texts = []; state.selected=null; state.nextId=1;
+      gPeople.innerHTML=''; gBoxes.innerHTML=''; gTexts.innerHTML='';
       labelInput.value='';
+      colorPicker.disabled = true;
       saveToLocal();
     }
 
     function saveToLocal(notify=true){
-      const data = { people: state.people, boxes: state.boxes, nextId: state.nextId };
+      const data = { people: state.people, boxes: state.boxes, texts: state.texts, nextId: state.nextId };
       try {
         localStorage.setItem('teamboard.v1', JSON.stringify(data));
         if(notify) toast('Saved.');
@@ -437,18 +544,19 @@
     }
 
     function hydrateFromData(data){
-      // Copy models directly; then render fresh DOM without mutating arrays during iteration
-      state.people = (data.people||[]).map(p=>({id:p.id, x:p.x, y:p.y, label:p.label||''}));
-      state.boxes  = (data.boxes||[]).map(b=>({id:b.id, x:b.x, y:b.y, w:b.w, h:b.h}));
+      state.people = (data.people||[]).map(p=>({id:p.id, x:p.x, y:p.y, label:p.label||'', color:p.color||DEFAULTS.personColor}));
+      state.boxes  = (data.boxes ||[]).map(b=>({id:b.id, x:b.x, y:b.y, w:b.w, h:b.h, color:b.color||DEFAULTS.boxColor}));
+      state.texts  = (data.texts ||[]).map(t=>({id:t.id, x:t.x, y:t.y, text:t.text||'Text', color:t.color||DEFAULTS.textColor, size:t.size||16}));
       state.nextId = data.nextId||1;
-      gPeople.innerHTML=''; gBoxes.innerHTML='';
+      gPeople.innerHTML=''; gBoxes.innerHTML=''; gTexts.innerHTML='';
       for(const p of state.people) renderPerson(p);
-      for(const b of state.boxes) renderBox(b);
+      for(const b of state.boxes)  renderBox(b);
+      for(const t of state.texts)  renderText(t);
       clearSelection();
     }
 
     function exportJSON(){
-      const data = JSON.stringify({ people: state.people, boxes: state.boxes, nextId: state.nextId }, null, 2);
+      const data = JSON.stringify({ people: state.people, boxes: state.boxes, texts: state.texts, nextId: state.nextId }, null, 2);
       const blob = new Blob([data], {type:'application/json'});
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -491,17 +599,9 @@
         }
       }
 
-      // Inject a minimal <style> into the SVG so classes render correctly in the exported image.
+      // Inject a minimal <style> for class-based text sizes (labels)
       const style = document.createElementNS('http://www.w3.org/2000/svg','style');
-      style.textContent = `
-        .people text.label { font-size:12px; fill:#eaf1ff; }
-        .person rect.torso { fill:#2a375f; stroke:#3d4f86; stroke-width:1.5; }
-        .person circle.head { fill:#6aa3ff; stroke:#98c0ff; stroke-width:1.5; }
-        .person .badge { fill:#111728; stroke:#2b3b66; stroke-width:1; }
-        .person text.badge-label { font-size:9px; fill:#bcd2ff; }
-        .box { fill:rgba(93,160,255,0.08); stroke:rgba(93,160,255,0.55); stroke-width:2; }
-        .box.selected { stroke:#89f0d0; stroke-width:3; stroke-dasharray:6 4; fill:rgba(137,240,208,0.10); }
-      `;
+      style.textContent = `.people text.label{font-size:12px;fill:#eaf1ff}`;
       clone.insertBefore(style, clone.firstChild);
 
       const serializer = new XMLSerializer();
@@ -536,6 +636,7 @@
     // --- Event Wiring ---
     btnSelect.addEventListener('click', ()=>setMode('select'));
     btnPerson.addEventListener('click', ()=>setMode('person'));
+    btnText.addEventListener('click', ()=>setMode('text'));
     btnBox.addEventListener('click', ()=>setMode('box'));
 
     btnDelete.addEventListener('click', deleteSelection);
@@ -551,9 +652,34 @@
     toggleGrid.addEventListener('change', ()=>{ svg.querySelector('#bg').setAttribute('fill', toggleGrid.checked ? 'url(#gridPattern)':'transparent'); });
     toggleSnap.addEventListener('change', ()=>{ state.snap = toggleSnap.checked; });
 
-    // Label input change
+    // Label/Text input change
     labelInput.addEventListener('change', ()=>{
-      if(state.selected && state.selected.type==='person') updatePersonLabel(state.selected.id, labelInput.value.trim());
+      if(!state.selected) return;
+      const val = labelInput.value.trim();
+      if(state.selected.type==='person') updatePersonLabel(state.selected.id, val);
+      if(state.selected.type==='text')   updateTextContent(state.selected.id, val);
+      saveToLocal(false);
+    });
+
+    // Color picker
+    colorPicker.addEventListener('input', ()=>{
+      if(!state.selected) return;
+      const hex = colorPicker.value;
+      if(state.selected.type==='person'){
+        const p = getPerson(state.selected.id); if(!p) return; p.color = hex;
+        const g = svg.querySelector(`[data-id="${p.id}"]`);
+        applyPersonColorAttrs({head: $('circle.head', g), torso:$('rect.torso', g)}, hex);
+      }
+      else if(state.selected.type==='box'){
+        const b = getBox(state.selected.id); if(!b) return; b.color = hex;
+        const el = svg.querySelector(`[data-id="${b.id}"]`);
+        applyBoxColorAttrs(el, hex);
+      }
+      else if(state.selected.type==='text'){
+        const t = getText(state.selected.id); if(!t) return; t.color = hex;
+        const g = svg.querySelector(`[data-id="${t.id}"]`);
+        const el = $('text.tcontent', g); if(el) el.style.fill = hex;
+      }
       saveToLocal(false);
     });
 
@@ -568,8 +694,20 @@
           createPerson(x, y);
           setMode('select');
           saveToLocal(false);
+          return; // creation handled
         }
-        return;
+        // fall through to selection if clicking something else
+      }
+
+      if(state.mode==='text'){
+        if(target===bg){
+          const x = snapVal(pt.x, e.altKey), y = snapVal(pt.y, e.altKey);
+          createText(x, y, 'Text');
+          setMode('select');
+          saveToLocal(false);
+          return; // creation handled
+        }
+        // fall through to selection
       }
 
       if(state.mode==='box'){
@@ -579,20 +717,20 @@
           state.drag = { type: 'box-resize', id: rect.getAttribute('data-id'), start: {x:startX, y:startY} };
           svg.setPointerCapture(e.pointerId);
         }
-        return;
+        return; // box mode only draws
       }
 
-      // Select/Move mode
+      // Select/Move mode (or when falling through from other modes)
       const draggable = target.closest('.draggable');
       if(draggable){
         const type = draggable.getAttribute('data-type');
         const id = draggable.getAttribute('data-id');
         selectEl(type, id);
-        if(type==='person'){
-          const p = getPerson(id);
-          if(!p) return;
-          const offset = { x: pt.x - p.x, y: pt.y - p.y };
-          state.drag = { type:'person', id, offset };
+        if(type==='person' || type==='text'){
+          const model = type==='person' ? getPerson(id) : getText(id);
+          if(!model) return;
+          const offset = { x: pt.x - model.x, y: pt.y - model.y };
+          state.drag = { type, id, offset };
         } else if(type==='box'){
           const x = Number(draggable.getAttribute('x'));
           const y = Number(draggable.getAttribute('y'));
@@ -605,27 +743,34 @@
     });
 
     svg.addEventListener('dblclick', (e)=>{
-      // Quick rename on double-clicking a person
       const person = e.target.closest('.person');
-      if(!person) return;
-      const id = person.getAttribute('data-id');
-      const curr = (getPerson(id)?.label)||'';
-      const next = prompt('Set label for person:', curr);
-      if(next!==null){ updatePersonLabel(id, next.trim()); labelInput.value = next.trim(); saveToLocal(false); }
+      const textbox = e.target.closest('.textbox');
+      if(person){
+        const id = person.getAttribute('data-id');
+        const curr = (getPerson(id)?.label)||'';
+        const next = prompt('Set label for person:', curr);
+        if(next!==null){ updatePersonLabel(id, next.trim()); labelInput.value = next.trim(); saveToLocal(false); }
+      } else if(textbox){
+        const id = textbox.getAttribute('data-id');
+        const curr = (getText(id)?.text)||'';
+        const next = prompt('Set text:', curr);
+        if(next!==null){ updateTextContent(id, next.trim()); labelInput.value = next.trim(); saveToLocal(false); }
+      }
     });
 
     svg.addEventListener('pointermove', (e)=>{
       if(!state.drag) return;
       const pt = svgPoint(e.clientX, e.clientY);
-      if(state.drag.type==='person'){
-        const p = getPerson(state.drag.id);
-        if(!p) return;
+      if(state.drag.type==='person' || state.drag.type==='text'){
+        const isPerson = state.drag.type==='person';
+        const model = isPerson ? getPerson(state.drag.id) : getText(state.drag.id);
+        if(!model) return;
         let nx = pt.x - state.drag.offset.x;
         let ny = pt.y - state.drag.offset.y;
         nx = snapVal(nx, e.altKey); ny = snapVal(ny, e.altKey);
-        p.x = nx; p.y = ny;
-        const el = svg.querySelector(`[data-id="${p.id}"]`);
-        positionPersonEl(el, nx, ny);
+        model.x = nx; model.y = ny;
+        const el = svg.querySelector(`[data-id="${model.id}"]`);
+        positionTransform(el, nx, ny);
       }
       if(state.drag.type==='box-move'){
         const el = svg.querySelector(`[data-id="${state.drag.id}"]`);
@@ -640,7 +785,6 @@
       if(state.drag.type==='box-resize'){
         const b = getBox(state.drag.id);
         if(!b) return;
-        // Draw from start to current pointer
         let w = pt.x - state.drag.start.x;
         let h = pt.y - state.drag.start.y;
         w = snapVal(w, e.altKey); h = snapVal(h, e.altKey);
@@ -662,24 +806,25 @@
       const isTextField = tag==='INPUT' || tag==='TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable);
       if((e.key==='Delete' || e.key==='Backspace') && !isTextField){ e.preventDefault(); deleteSelection(); }
       if((e.key==='s' || e.key==='S') && (e.ctrlKey||e.metaKey)) { e.preventDefault(); saveToLocal(); }
-      if(isTextField) return; // Don't hijack other shortcuts while typing
+      if(isTextField) return; // Don't hijack while typing
       if(e.key==='v' || e.key==='V'){ setMode('select'); }
       if(e.key==='p' || e.key==='P'){ setMode('person'); }
+      if(e.key==='t' || e.key==='T'){ setMode('text'); }
       if(e.key==='b' || e.key==='B'){ setMode('box'); }
-      if(e.key==='l' || e.key==='L'){ if(state.selected?.type==='person'){ labelInput.focus(); labelInput.select(); } }
+      if(e.key==='l' || e.key==='L'){ if(state.selected){ labelInput.focus(); labelInput.select(); } }
       if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){
         if(!state.selected) return;
         e.preventDefault();
         const step = e.shiftKey ? 10 : 1;
-        if(state.selected.type==='person'){
-          const p = getPerson(state.selected.id);
-          if(!p) return;
-          if(e.key==='ArrowLeft') p.x -= step;
-          if(e.key==='ArrowRight') p.x += step;
-          if(e.key==='ArrowUp') p.y -= step;
-          if(e.key==='ArrowDown') p.y += step;
-          const el = svg.querySelector(`[data-id="${p.id}"]`);
-          positionPersonEl(el, p.x, p.y);
+        if(state.selected.type==='person' || state.selected.type==='text'){
+          const model = state.selected.type==='person' ? getPerson(state.selected.id) : getText(state.selected.id);
+          if(!model) return;
+          if(e.key==='ArrowLeft') model.x -= step;
+          if(e.key==='ArrowRight') model.x += step;
+          if(e.key==='ArrowUp') model.y -= step;
+          if(e.key==='ArrowDown') model.y += step;
+          const el = svg.querySelector(`[data-id="${model.id}"]`);
+          positionTransform(el, model.x, model.y);
         } else {
           const el = svg.querySelector(`[data-id="${state.selected.id}"]`);
           let x = Number(el.getAttribute('x'));
@@ -707,10 +852,11 @@
     } catch(_){ }
 
     // Seed with a couple of people on first load for affordance
-    if(state.people.length===0){
+    if(state.people.length===0 && state.texts.length===0 && state.boxes.length===0){
       createPerson(200, 200, 'Lead');
       createPerson(320, 220, 'Dev A');
       createPerson(80, 260, 'Dev B');
+      createText(380, 120, 'Squad A');
       saveToLocal(false);
     }
   })();
