@@ -82,7 +82,7 @@
 
     .spacer { flex: 1; }
 
-    .hint { color: var(--muted); opacity: .9; background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.15); padding: 8px 10px; border-radius: 10px; font-weight: 500; }
+    .hint { color: var(--muted); opacity: .9; background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.15); padding: 8px 10px; border-radius: 10px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 clamp(220px, 30vw, 520px); max-width: clamp(220px, 30vw, 520px); }
 
     .board-wrap {
       position: relative;
