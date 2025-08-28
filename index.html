@@ -467,12 +467,66 @@
     }
 
     function exportPNG(){
-      // Clone SVG, inline styles, render to canvas, download PNG.
+      // Clone SVG, embed minimal styles, render to canvas, download PNG.
       const clone = svg.cloneNode(true);
       const vb = svg.getBoundingClientRect();
-      const serializer = new XMLSerializer();
+
+      // Ensure explicit dimensions & viewBox so rasterizer knows the size
+      clone.setAttribute('width', vb.width);
+      clone.setAttribute('height', vb.height);
+      if(!clone.getAttribute('viewBox')){
+        clone.setAttribute('viewBox', `0 0 ${vb.width} ${vb.height}`);
+      }
+
+      // Preserve grid if currently shown, otherwise white background
       const bgRect = clone.querySelector('#bg');
-      if(bgRect){ bgRect.setAttribute('fill', 'white'); bgRect.removeAttribute('id'); }
+      if(bgRect){
+        if(toggleGrid.checked){
+          bgRect.setAttribute('fill', 'url(#gridPattern)');
+          // Make sure grid strokes are absolute (no CSS vars)
+          const gridPaths = clone.querySelectorAll('pattern#gridPattern path');
+          gridPaths.forEach((p,i)=>{ if(i===0) p.setAttribute('stroke','rgba(0,0,0,0.08)'); else p.setAttribute('stroke','rgba(0,0,0,0.06)'); });
+        } else {
+          bgRect.setAttribute('fill', 'white');
+        }
+      }
+
+      // Inject a minimal <style> into the SVG so classes render correctly in the exported image.
+      const style = document.createElementNS('http://www.w3.org/2000/svg','style');
+      style.textContent = `
+        .people text.label { font-size:12px; fill:#eaf1ff; }
+        .person rect.torso { fill:#2a375f; stroke:#3d4f86; stroke-width:1.5; }
+        .person circle.head { fill:#6aa3ff; stroke:#98c0ff; stroke-width:1.5; }
+        .person .badge { fill:#111728; stroke:#2b3b66; stroke-width:1; }
+        .person text.badge-label { font-size:9px; fill:#bcd2ff; }
+        .box { fill:rgba(93,160,255,0.08); stroke:rgba(93,160,255,0.55); stroke-width:2; }
+        .box.selected { stroke:#89f0d0; stroke-width:3; stroke-dasharray:6 4; fill:rgba(137,240,208,0.10); }
+      `;
+      clone.insertBefore(style, clone.firstChild);
+
+      const serializer = new XMLSerializer();
+      const svgStr = serializer.serializeToString(clone);
+      const svgBlob = new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'});
+      const url = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = vb.width; canvas.height = vb.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((blob)=>{
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'teamboard.png';
+          a.click();
+          URL.revokeObjectURL(a.href);
+        }, 'image/png');
+      };
+      img.onerror = () => { toast('PNG export failed.'); URL.revokeObjectURL(url); };
+      img.src = url;
+    }
       // Ensure grid lines are visible in export (avoid CSS var in data URL)
       const gridPaths = clone.querySelectorAll('pattern#gridPattern path');
       gridPaths.forEach((p,i)=>{ if(i===0) p.setAttribute('stroke','rgba(0,0,0,0.08)'); else p.setAttribute('stroke','rgba(0,0,0,0.06)'); });
