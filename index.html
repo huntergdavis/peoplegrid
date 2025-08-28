@@ -527,32 +527,6 @@
       img.onerror = () => { toast('PNG export failed.'); URL.revokeObjectURL(url); };
       img.src = url;
     }
-      // Ensure grid lines are visible in export (avoid CSS var in data URL)
-      const gridPaths = clone.querySelectorAll('pattern#gridPattern path');
-      gridPaths.forEach((p,i)=>{ if(i===0) p.setAttribute('stroke','rgba(0,0,0,0.08)'); else p.setAttribute('stroke','rgba(0,0,0,0.06)'); });
-
-      const svgStr = serializer.serializeToString(clone);
-      const svgBlob = new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'});
-      const url = URL.createObjectURL(svgBlob);
-
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = vb.width; canvas.height = vb.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        URL.revokeObjectURL(url);
-        canvas.toBlob((blob)=>{
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = 'teamboard.png';
-          a.click();
-          URL.revokeObjectURL(a.href);
-        }, 'image/png');
-      };
-      img.onerror = () => { toast('PNG export failed.'); URL.revokeObjectURL(url); }
-      img.src = url;
-    }
 
     function toast(msg){
       hint.textContent = msg;
