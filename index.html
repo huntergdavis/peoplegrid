@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Team Formation Board</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #121521;
+      --panel-2: #171b2c;
+      --text: #e8ecf1;
+      --muted: #a4aec4;
+      --brand: #5da0ff;
+      --accent: #89f0d0;
+      --warn: #ff7a7a;
+      --grid: rgba(255,255,255,0.06);
+      --shadow: 0 8px 30px rgba(0,0,0,0.35);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --gap: 10px;
+      --grid-size: 20; /* px */
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 800px at 70% -10%, #182036 0%, #0b0d12 60%  ),
+                  linear-gradient(0deg, #0b0d12, #0b0d12);
+      color: var(--text);
+      font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      height: 100dvh;
+      gap: var(--gap);
+      padding: var(--gap);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .group { display: inline-flex; gap: 6px; padding: 4px; background: rgba(255,255,255,0.03); border-radius: 999px; }
+
+    button, .toggle, .input, label.btnlike {
+      -webkit-tap-highlight-color: transparent;
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: #0f1320;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 8px 12px;
+      cursor: pointer;
+      transition: transform .06s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03), 0 4px 14px rgba(0,0,0,0.25);
+      font-weight: 600;
+      letter-spacing: .2px;
+    }
+    button:hover, label.btnlike:hover { background: #12182a; }
+    button:active { transform: translateY(1px); }
+
+    button.primary { background: linear-gradient(180deg, #1a2340, #11172b); border-color: rgba(93,160,255,0.45); }
+    button.primary.active { background: linear-gradient(180deg, #233259, #1a2545); box-shadow: 0 0 0 2px rgba(93,160,255,0.35) inset; }
+
+    .toggle { display: inline-flex; align-items: center; gap: 6px; }
+    .toggle input { appearance: none; width: 32px; height: 18px; border-radius: 999px; background: #2a3147; position: relative; outline: none; cursor: pointer; border: 1px solid rgba(255,255,255,0.12); }
+    .toggle input::after { content: ""; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #cfd6e6; top: 1px; left: 1px; transition: transform .2s ease; }
+    .toggle input:checked { background: #24406f; border-color: rgba(137,240,208,0.5); }
+    .toggle input:checked::after { transform: translateX(14px); background: white; }
+
+    .spacer { flex: 1; }
+
+    .hint { color: var(--muted); opacity: .9; background: rgba(255,255,255,0.04); border: 1px dashed rgba(255,255,255,0.15); padding: 8px 10px; border-radius: 10px; font-weight: 500; }
+
+    .board-wrap {
+      position: relative;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: var(--shadow);
+      background: #0c0f18;
+    }
+
+    svg#board { width: 100%; height: 100%; display: block; background: transparent; }
+
+    .people text.label { font-size: 12px; fill: #eaf1ff; pointer-events: none; user-select: none; text-shadow: 0 1px 0 rgba(0,0,0,0.5); }
+
+    .person rect.torso { fill: #2a375f; stroke: #3d4f86; stroke-width: 1.5; }
+    .person circle.head { fill: #6aa3ff; stroke: #98c0ff; stroke-width: 1.5; }
+    .person .badge { fill: #111728; stroke: #2b3b66; stroke-width: 1; }
+    .person text.badge-label { font-size: 9px; fill: #bcd2ff; pointer-events: none; }
+    .person.selected rect.torso, .person.selected circle.head { stroke: var(--accent); filter: drop-shadow(0 0 6px rgba(137,240,208,0.5)); }
+
+    .box { fill: rgba(93,160,255,0.08); stroke: rgba(93,160,255,0.55); stroke-width: 2; }
+    .box.selected { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 6 4; fill: rgba(137,240,208,0.10); }
+
+    .overlay-input { position: absolute; inset: auto auto 0 0; display: none; }
+    .overlay-input input {
+      width: 220px; max-width: 50vw; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); outline: none;
+      background: #101628; color: var(--text); box-shadow: var(--shadow); font-weight: 600;
+    }
+
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); }
+
+    .footer-note { position: absolute; right: 10px; bottom: 10px; color: var(--muted); font-size: 12px; opacity: .8; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="toolbar" role="toolbar" aria-label="Board controls">
+      <div class="group" aria-label="Modes">
+        <button id="btnSelect" class="primary" title="Select/Move (V)">Select/Move</button>
+        <button id="btnPerson" title="Add Person (P)">+ Person</button>
+        <button id="btnBox" title="Draw Box (B)">▧ Box</button>
+      </div>
+
+      <div class="group" aria-label="Edit">
+        <label class="btnlike" for="labelInput" title="Rename selected person (L)">Label</label>
+        <input id="labelInput" class="input" placeholder="Set label…" style="width:180px" />
+        <button id="btnDelete" title="Delete selected (Del)" style="color:#ffbdbd;border-color:rgba(255,122,122,0.45)">Delete</button>
+        <button id="btnClear" title="Clear board">Clear</button>
+      </div>
+
+      <div class="group" aria-label="View">
+        <label class="toggle" title="Show/Hide grid">
+          <input id="toggleGrid" type="checkbox" checked />
+          <span>Grid</span>
+        </label>
+        <label class="toggle" title="Snap to grid (hold Alt to bypass)">
+          <input id="toggleSnap" type="checkbox" />
+          <span>Snap</span>
+        </label>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="group" aria-label="Persistence">
+        <button id="btnSave" title="Save to localStorage (Ctrl/Cmd+S)">Save</button>
+        <button id="btnLoad" title="Load from localStorage">Load</button>
+        <button id="btnExportJSON" title="Export JSON">Export JSON</button>
+        <input id="importFile" type="file" accept="application/json" style="display:none" />
+        <button id="btnImportJSON" title="Import JSON">Import</button>
+        <button id="btnExportPNG" title="Export PNG snapshot">Export PNG</button>
+      </div>
+
+      <div class="hint" id="hint">Mode: Select/Move. Tip: Click a person to drag. Double‑click a person to rename. Draw a box with “▧ Box”.</div>
+    </div>
+
+    <div class="board-wrap">
+      <svg id="board" xmlns="http://www.w3.org/2000/svg" tabindex="0" aria-label="Team formation canvas">
+        <defs>
+          <pattern id="gridPattern" width="20" height="20" patternUnits="userSpaceOnUse">
+            <rect width="20" height="20" fill="transparent"></rect>
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="var(--grid)" stroke-width="1"/>
+            <path d="M 100 0 V 100 M 0 100 H 100" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+          </pattern>
+        </defs>
+        <rect id="bg" x="0" y="0" width="100%" height="100%" fill="url(#gridPattern)"/>
+        <g class="boxes"></g>
+        <g class="people"></g>
+      </svg>
+
+      <div class="overlay-input" id="inlineEditor"><input type="text" /></div>
+      <div class="footer-note">Pro tip: Hold <span class="kbd">Alt</span> while dragging to bypass snap. Use <span class="kbd">Del</span> to delete.</div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    'use strict';
+
+    // --- DOM refs ---
+    const svg = document.getElementById('board');
+    const bg = document.getElementById('bg');
+    const gPeople = svg.querySelector('g.people');
+    const gBoxes  = svg.querySelector('g.boxes');
+    const hint = document.getElementById('hint');
+
+    const btnSelect = document.getElementById('btnSelect');
+    const btnPerson = document.getElementById('btnPerson');
+    const btnBox = document.getElementById('btnBox');
+    const btnDelete = document.getElementById('btnDelete');
+    const btnClear = document.getElementById('btnClear');
+    const btnSave = document.getElementById('btnSave');
+    const btnLoad = document.getElementById('btnLoad');
+    const btnExportJSON = document.getElementById('btnExportJSON');
+    const btnImportJSON = document.getElementById('btnImportJSON');
+    const importFile = document.getElementById('importFile');
+    const btnExportPNG = document.getElementById('btnExportPNG');
+
+    const toggleGrid = document.getElementById('toggleGrid');
+    const toggleSnap = document.getElementById('toggleSnap');
+
+    const labelInput = document.getElementById('labelInput');
+
+    // --- State ---
+    const state = {
+      mode: 'select', // 'select' | 'person' | 'box'
+      snap: false,
+      grid: true,
+      people: [], // {id, x, y, label}
+      boxes: [],  // {id, x, y, w, h}
+      selected: null, // {type:'person'|'box', id}
+      drag: null, // {type, id, start:{x,y}, offset:{x,y}, init:{x,y,w,h}}
+      nextId: 1
+    };
+
+    const GRID = 20; // px
+
+    // --- Utils ---
+    const $ = (sel, el=document) => el.querySelector(sel);
+
+    function setMode(m){
+      state.mode = m;
+      btnSelect.classList.toggle('active', m==='select');
+      btnPerson.classList.toggle('active', m==='person');
+      btnBox.classList.toggle('active', m==='box');
+      updateHint();
+    }
+
+    function updateHint(){
+      if(state.mode==='select') hint.textContent = 'Mode: Select/Move. Tip: Click a person or box to drag. Double‑click a person to rename. Del to delete.';
+      if(state.mode==='person') hint.textContent = 'Mode: Add Person. Click anywhere on the board to place a person.';
+      if(state.mode==='box') hint.textContent = 'Mode: Draw Box. Drag on empty space to create a box.';
+    }
+
+    function svgPoint(clientX, clientY){
+      const pt = svg.createSVGPoint();
+      pt.x = clientX; pt.y = clientY;
+      const out = pt.matrixTransform(svg.getScreenCTM().inverse());
+      return { x: out.x, y: out.y };
+    }
+
+    function snapVal(v, altKey){
+      if(!state.snap || altKey) return v;
+      return Math.round(v/GRID)*GRID;
+    }
+
+    function newId(prefix){ return `${prefix}-${state.nextId++}`; }
+
+    function getPerson(id){ return state.people.find(p => p.id===id); }
+    function getBox(id){ return state.boxes.find(b => b.id===id); }
+
+    function clearSelection(){
+      if(state.selected){
+        const {id} = state.selected;
+        const el = svg.querySelector(`[data-id="${id}"]`);
+        if(el){ el.classList.remove('selected'); }
+      }
+      state.selected = null;
+      labelInput.value = '';
+    }
+
+    function selectEl(type, id){
+      clearSelection();
+      const el = svg.querySelector(`[data-id="${id}"]`);
+      if(!el) return;
+      el.classList.add('selected');
+      state.selected = {type, id};
+      if(type==='person'){
+        const p = getPerson(id);
+        if(p) labelInput.value = p.label || '';
+      } else {
+        labelInput.value = '';
+      }
+      // Bring to front
+      if(type==='person') gPeople.appendChild(el);
+      if(type==='box') gBoxes.appendChild(el);
+    }
+
+    // ----- Rendering helpers (DOM only, no state mutation) -----
+    function renderPerson(model){
+      const {id, x, y, label} = model;
+      const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','person draggable');
+      g.setAttribute('data-type','person');
+      g.setAttribute('data-id', id);
+      g.setAttribute('tabindex','0');
+      positionPersonEl(g, x, y);
+
+      const head = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      head.setAttribute('class','head');
+      head.setAttribute('cx', 0);
+      head.setAttribute('cy', -18);
+      head.setAttribute('r', 12);
+
+      const torso = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      torso.setAttribute('class','torso');
+      torso.setAttribute('x', -16);
+      torso.setAttribute('y', -4);
+      torso.setAttribute('rx', 8);
+      torso.setAttribute('ry', 8);
+      torso.setAttribute('width', 32);
+      torso.setAttribute('height', 30);
+
+      const badge = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      badge.setAttribute('class','badge');
+      badge.setAttribute('x', -10);
+      badge.setAttribute('y', 4);
+      badge.setAttribute('rx', 4);
+      badge.setAttribute('ry', 4);
+      badge.setAttribute('width', 20);
+      badge.setAttribute('height', 10);
+
+      const badgeLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
+      badgeLabel.setAttribute('class','badge-label');
+      badgeLabel.setAttribute('x', 0);
+      badgeLabel.setAttribute('y', 12);
+      badgeLabel.setAttribute('text-anchor','middle');
+      badgeLabel.textContent = (id.split('-')[1] || id);
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.setAttribute('class','label');
+      text.setAttribute('x', 0);
+      text.setAttribute('y', 42);
+      text.setAttribute('text-anchor','middle');
+      text.textContent = label || 'Person';
+
+      g.appendChild(head);
+      g.appendChild(torso);
+      g.appendChild(badge);
+      g.appendChild(badgeLabel);
+      g.appendChild(text);
+      gPeople.appendChild(g);
+      return g;
+    }
+
+    function renderBox(model){
+      const {id, x, y, w, h} = model;
+      const r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r.setAttribute('class','box draggable');
+      r.setAttribute('data-type','box');
+      r.setAttribute('data-id', id);
+      setRect(r, x, y, w, h);
+      gBoxes.appendChild(r);
+      return r;
+    }
+
+    // ----- Create helpers (state mutation + render) -----
+    function createPerson(x, y, label='Person'){
+      const id = newId('p');
+      const model = {id, x, y, label};
+      state.people.push(model);
+      const g = renderPerson(model);
+      selectEl('person', id);
+      return g;
+    }
+
+    function positionPersonEl(g, x, y){ g.setAttribute('transform', `translate(${x},${y})`); }
+
+    function updatePersonLabel(id, newLabel){
+      const person = getPerson(id);
+      if(!person) return;
+      person.label = newLabel;
+      const g = svg.querySelector(`[data-id="${id}"]`);
+      const text = g && $('text.label', g);
+      if(text) text.textContent = newLabel;
+    }
+
+    function createBox(x, y, w, h){
+      const id = newId('b');
+      const model = {id, x, y, w, h};
+      state.boxes.push(model);
+      const r = renderBox(model);
+      selectEl('box', id);
+      return r;
+    }
+
+    function setRect(el, x, y, w, h){
+      if(w < 0){ x = x + w; w = Math.abs(w); }
+      if(h < 0){ y = y + h; h = Math.abs(h); }
+      el.setAttribute('x', x);
+      el.setAttribute('y', y);
+      el.setAttribute('width', w);
+      el.setAttribute('height', h);
+    }
+
+    function updateBoxModelFromEl(el){
+      const id = el.getAttribute('data-id');
+      const b = getBox(id);
+      if(!b) return;
+      b.x = Number(el.getAttribute('x'));
+      b.y = Number(el.getAttribute('y'));
+      b.w = Number(el.getAttribute('width'));
+      b.h = Number(el.getAttribute('height'));
+    }
+
+    function deleteSelection(){
+      if(!state.selected) return;
+      const {type, id} = state.selected;
+      const el = svg.querySelector(`[data-id="${id}"]`);
+      if(el) el.remove();
+      if(type==='person') state.people = state.people.filter(p=>p.id!==id);
+      if(type==='box') state.boxes = state.boxes.filter(b=>b.id!==id);
+      state.selected = null;
+      labelInput.value = '';
+      saveToLocal(false); // autosave
+      toast('Deleted.');
+    }
+
+    function clearBoard(){
+      if(!confirm('Clear the entire board?')) return;
+      state.people = []; state.boxes = []; state.selected=null; state.nextId=1;
+      gPeople.innerHTML=''; gBoxes.innerHTML='';
+      labelInput.value='';
+      saveToLocal();
+    }
+
+    function saveToLocal(notify=true){
+      const data = { people: state.people, boxes: state.boxes, nextId: state.nextId };
+      try {
+        localStorage.setItem('teamboard.v1', JSON.stringify(data));
+        if(notify) toast('Saved.');
+      } catch(err){ console.error(err); toast('Save failed (storage full?).'); }
+    }
+
+    function loadFromLocal(){
+      const raw = localStorage.getItem('teamboard.v1');
+      if(!raw){ toast('Nothing saved yet.'); return; }
+      try {
+        const data = JSON.parse(raw);
+        hydrateFromData(data);
+        toast('Loaded.');
+      } catch(err){ console.error(err); toast('Load failed.'); }
+    }
+
+    function hydrateFromData(data){
+      // Copy models directly; then render fresh DOM without mutating arrays during iteration
+      state.people = (data.people||[]).map(p=>({id:p.id, x:p.x, y:p.y, label:p.label||''}));
+      state.boxes  = (data.boxes||[]).map(b=>({id:b.id, x:b.x, y:b.y, w:b.w, h:b.h}));
+      state.nextId = data.nextId||1;
+      gPeople.innerHTML=''; gBoxes.innerHTML='';
+      for(const p of state.people) renderPerson(p);
+      for(const b of state.boxes) renderBox(b);
+      clearSelection();
+    }
+
+    function exportJSON(){
+      const data = JSON.stringify({ people: state.people, boxes: state.boxes, nextId: state.nextId }, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'teamboard.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function importJSONFile(file){
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { hydrateFromData(JSON.parse(reader.result)); toast('Imported.'); saveToLocal(false); }
+        catch(err){ console.error(err); toast('Import failed.'); }
+      };
+      reader.readAsText(file);
+    }
+
+    function exportPNG(){
+      // Clone SVG, inline styles, render to canvas, download PNG.
+      const clone = svg.cloneNode(true);
+      const vb = svg.getBoundingClientRect();
+      const serializer = new XMLSerializer();
+      const bgRect = clone.querySelector('#bg');
+      if(bgRect){ bgRect.setAttribute('fill', 'white'); bgRect.removeAttribute('id'); }
+      // Ensure grid lines are visible in export (avoid CSS var in data URL)
+      const gridPaths = clone.querySelectorAll('pattern#gridPattern path');
+      gridPaths.forEach((p,i)=>{ if(i===0) p.setAttribute('stroke','rgba(0,0,0,0.08)'); else p.setAttribute('stroke','rgba(0,0,0,0.06)'); });
+
+      const svgStr = serializer.serializeToString(clone);
+      const svgBlob = new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'});
+      const url = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = vb.width; canvas.height = vb.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((blob)=>{
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'teamboard.png';
+          a.click();
+          URL.revokeObjectURL(a.href);
+        }, 'image/png');
+      };
+      img.onerror = () => { toast('PNG export failed.'); URL.revokeObjectURL(url); }
+      img.src = url;
+    }
+
+    function toast(msg){
+      hint.textContent = msg;
+      setTimeout(updateHint, 1200);
+    }
+
+    // --- Event Wiring ---
+    btnSelect.addEventListener('click', ()=>setMode('select'));
+    btnPerson.addEventListener('click', ()=>setMode('person'));
+    btnBox.addEventListener('click', ()=>setMode('box'));
+
+    btnDelete.addEventListener('click', deleteSelection);
+    btnClear.addEventListener('click', clearBoard);
+
+    btnSave.addEventListener('click', ()=>saveToLocal());
+    btnLoad.addEventListener('click', loadFromLocal);
+    btnExportJSON.addEventListener('click', exportJSON);
+    btnImportJSON.addEventListener('click', ()=>importFile.click());
+    importFile.addEventListener('change', (e)=>{ const f=e.target.files[0]; if(f) importJSONFile(f); e.target.value='';});
+    btnExportPNG.addEventListener('click', exportPNG);
+
+    toggleGrid.addEventListener('change', ()=>{ svg.querySelector('#bg').setAttribute('fill', toggleGrid.checked ? 'url(#gridPattern)':'transparent'); });
+    toggleSnap.addEventListener('change', ()=>{ state.snap = toggleSnap.checked; });
+
+    // Label input change
+    labelInput.addEventListener('change', ()=>{
+      if(state.selected && state.selected.type==='person') updatePersonLabel(state.selected.id, labelInput.value.trim());
+      saveToLocal(false);
+    });
+
+    // Canvas interactions
+    svg.addEventListener('pointerdown', (e)=>{
+      const target = e.target;
+      const pt = svgPoint(e.clientX, e.clientY);
+
+      if(state.mode==='person'){
+        if(target.closest('.people') || target===bg){
+          const x = snapVal(pt.x, e.altKey); const y = snapVal(pt.y, e.altKey);
+          createPerson(x, y);
+          setMode('select');
+          saveToLocal(false);
+        }
+        return;
+      }
+
+      if(state.mode==='box'){
+        if(target===bg){
+          const startX = snapVal(pt.x, e.altKey), startY = snapVal(pt.y, e.altKey);
+          const rect = createBox(startX, startY, 1, 1);
+          state.drag = { type: 'box-resize', id: rect.getAttribute('data-id'), start: {x:startX, y:startY} };
+          svg.setPointerCapture(e.pointerId);
+        }
+        return;
+      }
+
+      // Select/Move mode
+      const draggable = target.closest('.draggable');
+      if(draggable){
+        const type = draggable.getAttribute('data-type');
+        const id = draggable.getAttribute('data-id');
+        selectEl(type, id);
+        if(type==='person'){
+          const p = getPerson(id);
+          if(!p) return;
+          const offset = { x: pt.x - p.x, y: pt.y - p.y };
+          state.drag = { type:'person', id, offset };
+        } else if(type==='box'){
+          const x = Number(draggable.getAttribute('x'));
+          const y = Number(draggable.getAttribute('y'));
+          state.drag = { type:'box-move', id, offset: { x: pt.x - x, y: pt.y - y } };
+        }
+        svg.setPointerCapture(e.pointerId);
+      } else {
+        clearSelection();
+      }
+    });
+
+    svg.addEventListener('dblclick', (e)=>{
+      // Quick rename on double-clicking a person
+      const person = e.target.closest('.person');
+      if(!person) return;
+      const id = person.getAttribute('data-id');
+      const curr = (getPerson(id)?.label)||'';
+      const next = prompt('Set label for person:', curr);
+      if(next!==null){ updatePersonLabel(id, next.trim()); labelInput.value = next.trim(); saveToLocal(false); }
+    });
+
+    svg.addEventListener('pointermove', (e)=>{
+      if(!state.drag) return;
+      const pt = svgPoint(e.clientX, e.clientY);
+      if(state.drag.type==='person'){
+        const p = getPerson(state.drag.id);
+        if(!p) return;
+        let nx = pt.x - state.drag.offset.x;
+        let ny = pt.y - state.drag.offset.y;
+        nx = snapVal(nx, e.altKey); ny = snapVal(ny, e.altKey);
+        p.x = nx; p.y = ny;
+        const el = svg.querySelector(`[data-id="${p.id}"]`);
+        positionPersonEl(el, nx, ny);
+      }
+      if(state.drag.type==='box-move'){
+        const el = svg.querySelector(`[data-id="${state.drag.id}"]`);
+        if(!el) return;
+        let nx = pt.x - state.drag.offset.x;
+        let ny = pt.y - state.drag.offset.y;
+        nx = snapVal(nx, e.altKey); ny = snapVal(ny, e.altKey);
+        el.setAttribute('x', nx);
+        el.setAttribute('y', ny);
+        updateBoxModelFromEl(el);
+      }
+      if(state.drag.type==='box-resize'){
+        const b = getBox(state.drag.id);
+        if(!b) return;
+        // Draw from start to current pointer
+        let w = pt.x - state.drag.start.x;
+        let h = pt.y - state.drag.start.y;
+        w = snapVal(w, e.altKey); h = snapVal(h, e.altKey);
+        const el = svg.querySelector(`[data-id="${b.id}"]`);
+        setRect(el, state.drag.start.x, state.drag.start.y, w, h);
+        updateBoxModelFromEl(el);
+      }
+    });
+
+    svg.addEventListener('pointerup', (e)=>{
+      if(state.drag){ saveToLocal(false); }
+      state.drag = null;
+      try { svg.releasePointerCapture(e.pointerId); } catch(_){ }
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', (e)=>{
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      const isTextField = tag==='INPUT' || tag==='TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable);
+      if((e.key==='Delete' || e.key==='Backspace') && !isTextField){ e.preventDefault(); deleteSelection(); }
+      if((e.key==='s' || e.key==='S') && (e.ctrlKey||e.metaKey)) { e.preventDefault(); saveToLocal(); }
+      if(isTextField) return; // Don't hijack other shortcuts while typing
+      if(e.key==='v' || e.key==='V'){ setMode('select'); }
+      if(e.key==='p' || e.key==='P'){ setMode('person'); }
+      if(e.key==='b' || e.key==='B'){ setMode('box'); }
+      if(e.key==='l' || e.key==='L'){ if(state.selected?.type==='person'){ labelInput.focus(); labelInput.select(); } }
+      if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){
+        if(!state.selected) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        if(state.selected.type==='person'){
+          const p = getPerson(state.selected.id);
+          if(!p) return;
+          if(e.key==='ArrowLeft') p.x -= step;
+          if(e.key==='ArrowRight') p.x += step;
+          if(e.key==='ArrowUp') p.y -= step;
+          if(e.key==='ArrowDown') p.y += step;
+          const el = svg.querySelector(`[data-id="${p.id}"]`);
+          positionPersonEl(el, p.x, p.y);
+        } else {
+          const el = svg.querySelector(`[data-id="${state.selected.id}"]`);
+          let x = Number(el.getAttribute('x'));
+          let y = Number(el.getAttribute('y'));
+          if(e.key==='ArrowLeft') x -= step;
+          if(e.key==='ArrowRight') x += step;
+          if(e.key==='ArrowUp') y -= step;
+          if(e.key==='ArrowDown') y += step;
+          el.setAttribute('x', x); el.setAttribute('y', y);
+          updateBoxModelFromEl(el);
+        }
+        saveToLocal(false);
+      }
+    });
+
+    // Init
+    setMode('select');
+    state.snap = toggleSnap.checked;
+    state.grid = toggleGrid.checked;
+
+    // Try to load saved board automatically
+    try {
+      const raw = localStorage.getItem('teamboard.v1');
+      if(raw){ hydrateFromData(JSON.parse(raw)); }
+    } catch(_){ }
+
+    // Seed with a couple of people on first load for affordance
+    if(state.people.length===0){
+      createPerson(200, 200, 'Lead');
+      createPerson(320, 220, 'Dev A');
+      createPerson(80, 260, 'Dev B');
+      saveToLocal(false);
+    }
+  })();
+  </script>
+</body>
+</html>
+
